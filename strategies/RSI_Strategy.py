@@ -26,8 +26,8 @@ def strategy(data, params={'rsi_buy_threshold': 25, 'rsi_sell_threshold': 75, 'w
     
     for i in range(1, len(data_copy)):
         data_copy.at[i, 'action'] = check_rsi_action(
-            current_rsi=data_copy['RSI'].iloc[i],
-            previous_rsi=data_copy['RSI'].iloc[i - 1],
+            current_rsi=data_copy['RSI'].iloc[i-1],
+            previous_rsi=data_copy['RSI'].iloc[i - 2],
             rsi_buy_threshold=rsi_buy_threshold,
             rsi_sell_threshold=rsi_sell_threshold
         )
@@ -38,17 +38,17 @@ def should_buy_live(data, params={'rsi_buy_threshold': 25, 'rsi_sell_threshold':
     if len(data) < 2:
         raise ValueError("Insufficient data to calculate RSI")
     
-    rsi_buy_threshold = params.get('rsi_buy_threshold')
-    rsi_sell_threshold = params.get('rsi_sell_threshold')
     window = params.get('window')
     
-    recent_data = data[-(window + 1):]  # Only take the last `window` periods
+    recent_data = data  # Only take the last `window` periods
     recent_rsi = calculate_rsi(recent_data, window)
-    
+        
     current_rsi = recent_rsi.iloc[-1]
     previous_rsi = recent_rsi.iloc[-2]
     
-    return check_rsi_action(current_rsi, previous_rsi, rsi_buy_threshold, rsi_sell_threshold)
+    decision = [check_rsi_action(current_rsi, previous_rsi, params.get('rsi_buy_threshold'), params.get('rsi_sell_threshold')), current_rsi]
+    
+    return decision
 
 # Example usage:
 # df = fetch_historical_data('AAPL', '1d', '2018-01-01', '2024-01-01')

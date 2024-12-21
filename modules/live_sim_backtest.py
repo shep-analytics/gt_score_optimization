@@ -1,8 +1,8 @@
 import pandas as pd
 from datetime import timedelta
 
-def run_live_simulation(strategy_function, data, starting_cash=1000000, commission=0.001, spread=0.01, params=None):
 
+def run_live_simulation(strategy_function, data, starting_cash=1000000, commission=0.001, spread=0.01, params=None, save_path=None):
     """
     Run a live simulation backtest based on a strategy function.
 
@@ -13,6 +13,7 @@ def run_live_simulation(strategy_function, data, starting_cash=1000000, commissi
     - commission (float): The percentage commission on each trade.
     - spread (float): The price spread in dollars.
     - params (dict): Parameters to pass to the strategy function.
+    - save_path (str): Optional. Path to save the resulting DataFrame as a CSV file.
 
     Returns:
     - dict: Contains trade details and performance metrics.
@@ -31,18 +32,21 @@ def run_live_simulation(strategy_function, data, starting_cash=1000000, commissi
 
     data = data.sort_values('Date').reset_index(drop=True)
     data['action'] = 'none'
+    data['RSI'] = None
 
     for i in range(len(data)):
         current_time = data.at[i, 'Date']
         current_price = data.at[i, 'Close']
         current_data = data.iloc[:i+1]
 
-        if i < params.get('window', 14):
-            action = 'none'
-        else:
-            action = strategy_function(current_data, params)
 
+        action_full = strategy_function(current_data, params)
+
+        action = action_full[0]
+        
+    
         data.at[i, 'action'] = action
+        data.at[i, 'RSI'] = action_full[1]
 
         if action == 'buy' and position == 0:
             buy_price = current_price + spread
@@ -109,6 +113,9 @@ def run_live_simulation(strategy_function, data, starting_cash=1000000, commissi
         longest_time_position_held = timedelta(0)
 
     data['portfolio_value'] = portfolio_values
+
+    if save_path:
+        data.to_csv(save_path, index=False)
 
     return {
         'trades_history': trades_history,

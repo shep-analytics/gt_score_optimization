@@ -6,18 +6,23 @@ if __name__ == "__main__":
     from data_collection.fetch_data import fetch_historical_data
     df = fetch_historical_data('AAPL', '1d', '2018-01-01', '2024-01-01')
     
-    from strategies.RSI_Strategy import strategy, should_buy_live
     from modules.backtester import run_backtest
     from modules.live_sim_backtest import run_live_simulation
 
-    params = {'rsi_buy_threshold': 25, 'rsi_sell_threshold': 75, 'window': 14}
+    # from strategies.RSI_Strategy import strategy, should_buy_live
+    # params = {'rsi_buy_threshold': 25, 'rsi_sell_threshold': 75, 'window': 14}
+
+    from strategies.MACD_Strategy import strategy, should_buy_live
+    params = {'short_window': 12, 'long_window': 26, 'signal_window': 9}
 
     # Run the backtest
     trading_signals = strategy(df, params)
     backtest_results, trading_signals_with_portfolio = run_backtest(trading_signals)
+    # Save the trading signals with portfolio to a CSV file for easy analysis
+    trading_signals_with_portfolio.to_csv('backtest_trading_signals_with_portfolio.csv', index=False)
 
     # Run the live simulation backtest
-    live_sim_results, live_trading_signals_with_portfolio = run_live_simulation(should_buy_live, df, params=params)
+    live_sim_results, live_trading_signals_with_portfolio = run_live_simulation(should_buy_live, df, params=params, save_path='live_simulation_trading_signals_with_portfolio.csv')
 
     # Print summary results for backtest
     print("Backtest Results:")
