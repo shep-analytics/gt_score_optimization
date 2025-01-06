@@ -39,7 +39,7 @@ def run_live_simulation(strategy_function, data, starting_cash=1000000, commissi
         current_price = data.at[i, 'Close']
         current_data = data.iloc[:i+1]
 
-
+        # pulls a list that has the action and the RSI value [action, RSI]
         action_full = strategy_function(current_data, params)
 
         action = action_full[0]

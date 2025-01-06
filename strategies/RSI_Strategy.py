@@ -1,4 +1,6 @@
 import pandas as pd
+from hyperopt import hp
+
 
 def calculate_rsi(data, window):
     delta = data['Close'].diff()
@@ -21,7 +23,8 @@ def strategy(data, params={'rsi_buy_threshold': 25, 'rsi_sell_threshold': 75, 'w
     window = params.get('window')
     
     data_copy = data.copy()
-    data_copy['RSI'] = calculate_rsi(data_copy, window)
+    # window must be an integer because the quniform hyperopt function returns floats
+    data_copy['RSI'] = calculate_rsi(data_copy, int(params['window']))
     data_copy['action'] = "none"
     
     for i in range(1, len(data_copy)):
@@ -49,6 +52,20 @@ def should_buy_live(data, params={'rsi_buy_threshold': 25, 'rsi_sell_threshold':
     decision = [check_rsi_action(current_rsi, previous_rsi, params.get('rsi_buy_threshold'), params.get('rsi_sell_threshold')), current_rsi]
     
     return decision
+
+# Define the param_space for Hyperopt optimization
+param_space = {
+    'rsi_buy_threshold': hp.uniform('rsi_buy_threshold', 10, 40),  # Search between 10 and 40
+    'rsi_sell_threshold': hp.uniform('rsi_sell_threshold', 60, 90),  # Search between 60 and 90
+    'window': hp.quniform('window', 5, 30, 1)  # Integer values between 5 and 30
+}
+
+# Define the bounds for the Genetic Algorithm optimization
+ga_bounds = {
+    'rsi_buy_threshold': (10, 40),
+    'rsi_sell_threshold': (60, 90),
+    'window': (5, 30)
+}
 
 # Example usage:
 # df = fetch_historical_data('AAPL', '1d', '2018-01-01', '2024-01-01')

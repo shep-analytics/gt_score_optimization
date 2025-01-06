@@ -1,85 +1,58 @@
-# Example usage
-if __name__ == "__main__":
+print('setting up strategies...')
+from strategies.RSI_Strategy import strategy as RSI_strategy, should_buy_live as RSI_should_buy_live, param_space as RSI_param_space, ga_bounds as RSI_ga_bounds
+from strategies.MACD_Strategy import strategy as MACD_strategy, should_buy_live as MACD_should_buy_live, param_space as MACD_param_space, ga_bounds as MACD_ga_bounds
+from strategies.BollingerBands_Strategy import strategy as BollingerBands_strategy, should_buy_live as BollingerBands_should_buy_live, param_space as BollingerBands_param_space, ga_bounds as BollingerBands_ga_bounds
 
-    import matplotlib.pyplot as plt
+strategies = [
+    {'strategy': RSI_strategy, 'params': {'rsi_buy_threshold': 25, 'rsi_sell_threshold': 75, 'window': 14}, 'param_space': RSI_param_space, 'ga_bounds':RSI_ga_bounds},
+    {'strategy': MACD_strategy, 'params': {'short_window': 12, 'long_window': 26, 'signal_window': 9}, 'param_space': MACD_param_space, 'ga_bounds':MACD_ga_bounds},
+    {'strategy': BollingerBands_strategy, 'params': {'window': 20, 'num_std_dev': 2}, 'param_space': BollingerBands_param_space, 'ga_bounds':BollingerBands_ga_bounds}
+]
 
-    from data_collection.fetch_data import fetch_historical_data
-    df = fetch_historical_data('AAPL', '1d', '2018-01-01', '2024-01-01')
-    
-    from modules.backtester import run_backtest
-    from modules.live_sim_backtest import run_live_simulation
+print('setting up data...')
+from data_collection.fetch_data import fetch_historical_data
+tickers = ['AAPL', 'WMT', 'TSLA']
+data_frames = []
+for i in range(len(tickers)):
+    data_frames.append(fetch_historical_data(tickers[i], '1d', '2010-01-01', '2024-01-01'))
 
-    # from strategies.RSI_Strategy import strategy, should_buy_live
-    # params = {'rsi_buy_threshold': 25, 'rsi_sell_threshold': 75, 'window': 14}
+print('optimizing strategies...')
+from machine_learning import optimize
+from machine_learning import loss_functions
+from data_collection.fetch_data import fetch_historical_data
+results = optimize.optimize(strategies, data_frames, loss_functions.simple_loss_function, "hyperopt")
 
-    from strategies.MACD_Strategy import strategy, should_buy_live
-    params = {'short_window': 12, 'long_window': 26, 'signal_window': 9}
+print('results:')
+print('Best loss:', results['best_loss'])
+print('Best params:', results['best_params'])
+print('Best strategy:', results['best_strategy'].__module__)
 
-    # Run the backtest
-    trading_signals = strategy(df, params)
-    backtest_results, trading_signals_with_portfolio = run_backtest(trading_signals)
-    # Save the trading signals with portfolio to a CSV file for easy analysis
-    trading_signals_with_portfolio.to_csv('backtest_trading_signals_with_portfolio.csv', index=False)
+# run a backtest with the new strategy and params but on the year of 2024 only
+print('\nRunning backtest for 2024...')
 
-    # Run the live simulation backtest
-    live_sim_results, live_trading_signals_with_portfolio = run_live_simulation(should_buy_live, df, params=params, save_path='live_simulation_trading_signals_with_portfolio.csv')
+# Fetch 2024 data
+test_data_frames = []
+for ticker in tickers:
+    test_data_frames.append(fetch_historical_data(ticker, '1d', '2024-01-01', '2024-12-31'))
 
-    # Print summary results for backtest
-    print("Backtest Results:")
-    print("Total trades:", backtest_results['total_trades'])
-    print("Final cash:", backtest_results['final_cash'])
-    print("Total amount of money made:", backtest_results['total_amount_of_money_made'])
-    print("Total percentage gain:", backtest_results['total_percentage_gain'])
-    print("Average yearly percentage gain:", backtest_results['average_yearly_percentage_gain'])
-    print("Average monthly percentage gain:", backtest_results['average_monthly_percentage_gain'])
-    print("Average time holding position:", backtest_results['average_time_holding_position'])
-    print("Longest time position held:", backtest_results['longest_time_position_held'])
+import modules.backtester as backtest
 
-    # Print summary results for live simulation
-    print("\nLive Simulation Results:")
-    print("Total trades:", live_sim_results['total_trades'])
-    print("Final cash:", live_sim_results['final_cash'])
-    print("Total amount of money made:", live_sim_results['total_amount_of_money_made'])
-    print("Total percentage gain:", live_sim_results['total_percentage_gain'])
-    print("Average yearly percentage gain:", live_sim_results['average_yearly_percentage_gain'])
-    print("Average monthly percentage gain:", live_sim_results['average_monthly_percentage_gain'])
-    print("Average time holding position:", live_sim_results['average_time_holding_position'])
-    print("Longest time position held:", live_sim_results['longest_time_position_held'])
+# Run backtest with optimized parameters
+backtest_results_list = []
+for df in test_data_frames:
+    # Generate trading signals using best strategy and params
+    trading_signals = results['best_strategy'](df['ohlc'], results['best_params'])
+    # Run backtest
+    backtest_results, _ = backtest.run_backtest(trading_signals)
+    backtest_results_list.append(backtest_results)
 
-    # Plot portfolio value over time for backtest
-    plt.figure(figsize=(12, 6))
-    plt.plot(trading_signals_with_portfolio['Date'], trading_signals_with_portfolio['portfolio_value'], label='Backtest Portfolio Value')
-    plt.xlabel('Date')
-    plt.ylabel('Portfolio Value')
-    plt.title('Backtest Portfolio Value Over Time')
+# Combine results from multiple tickers
+combined_results = optimize.compile_backtest_results(backtest_results_list, test_data_frames)
 
-    # Determine the x-axis ticks
-    total_days = (trading_signals_with_portfolio['Date'].iloc[-1] - trading_signals_with_portfolio['Date'].iloc[0]).days
-    if total_days > 3 * 365:
-        plt.gca().xaxis.set_major_locator(plt.MaxNLocator(5))
-    elif total_days > 3 * 30:
-        plt.gca().xaxis.set_major_locator(plt.MaxNLocator(24))
-    else:
-        plt.gca().xaxis.set_major_locator(plt.MaxNLocator(90))
-
-    plt.legend()
-    plt.savefig('backtest_portfolio_value.png')  # Save the plot to a file
-
-    # Plot portfolio value over time for live simulation
-    plt.figure(figsize=(12, 6))
-    plt.plot(live_trading_signals_with_portfolio['Date'], live_trading_signals_with_portfolio['portfolio_value'], label='Live Simulation Portfolio Value')
-    plt.xlabel('Date')
-    plt.ylabel('Portfolio Value')
-    plt.title('Live Simulation Portfolio Value Over Time')
-
-    # Determine the x-axis ticks
-    total_days = (live_trading_signals_with_portfolio['Date'].iloc[-1] - live_trading_signals_with_portfolio['Date'].iloc[0]).days
-    if total_days > 3 * 365:
-        plt.gca().xaxis.set_major_locator(plt.MaxNLocator(5))
-    elif total_days > 3 * 30:
-        plt.gca().xaxis.set_major_locator(plt.MaxNLocator(24))
-    else:
-        plt.gca().xaxis.set_major_locator(plt.MaxNLocator(90))
-
-    plt.legend()
-    plt.savefig('live_simulation_portfolio_value.png')  # Save the plot to a file
+print('2024 Backtest Results:')
+print('Total Money Made: $', round(combined_results['total_amount_of_money_made'], 2))
+print('Total Return: ', round(combined_results['total_percentage_gain'] * 100, 2), '%')
+print('Number of Trades:', combined_results['total_trades'])
+print('Average Hold Time:', combined_results['average_time_holding_position'])
+print('Average Return per Year:', round(combined_results['average_return_per_year'] * 100, 2), '%')
+print('Average Trades per Year:', combined_results['average_trades_per_year'])

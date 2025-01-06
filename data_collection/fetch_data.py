@@ -1,5 +1,6 @@
 import yfinance as yf
 import pandas as pd
+from datetime import datetime
 
 def fetch_historical_data(ticker, interval, start_date, end_date):
     """
@@ -21,7 +22,12 @@ def fetch_historical_data(ticker, interval, start_date, end_date):
     data.set_index('Index', inplace=True)
     ohlc_data = data[['Date', 'Open', 'High', 'Low', 'Close']]
     ohlc_data = ohlc_data.round(2)  # Round the values to 2 decimal places
-    return ohlc_data
+    
+    start = datetime.strptime(start_date, '%Y-%m-%d')
+    end = datetime.strptime(end_date, '%Y-%m-%d')
+    total_time_passed = end - start
+    
+    return {'ohlc':ohlc_data, 'time_passed':total_time_passed}
 
 # Example usage:
 
