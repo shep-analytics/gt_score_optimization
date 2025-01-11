@@ -5,8 +5,10 @@ import pandas as pd
 import numpy as np
 import warnings
 from tqdm import tqdm
-
-
+from datetime import timedelta
+import copy
+from datetime import datetime
+from collections import defaultdict
 from modules import backtester
 
 warnings.filterwarnings("ignore")
@@ -26,38 +28,160 @@ except ImportError:
     DEAP_INSTALLED = False
 
 
-def compile_backtest_results(results,data_frames):
+def calculate_average_yearly_gain(portfolio_values):
+    """
+    Calculates the average yearly percentage gain from a list of portfolio values over time.
+    
+    Args:
+        portfolio_values (list): A list of dictionaries with "date_time" (pandas Timestamp) and "value" keys.
+
+    Returns:
+        float: The average yearly percentage gain as a percentage (e.g., 8.0 for 8%).
+    """
+    # Parse the data into a dictionary grouped by year
+    yearly_values = defaultdict(list)
+    for record in portfolio_values:
+        # Ensure date_time is a pandas Timestamp and extract the year
+        date = record["date_time"].to_pydatetime() if hasattr(record["date_time"], "to_pydatetime") else record["date_time"]
+        yearly_values[date.year].append(record["value"])
+    
+    yearly_gains = []
+    
+    # Calculate yearly gains
+    for year, values in sorted(yearly_values.items()):
+        if len(values) >= 2:  # Ensure we have at least start and end values
+            start_value = values[0]
+            end_value = values[-1]
+            yearly_gain = ((end_value - start_value) / start_value)
+            yearly_gains.append(yearly_gain)
+    
+    # Handle cases where years are incomplete
+    if len(yearly_gains) > 0:
+        average_yearly_gain = sum(yearly_gains) / len(yearly_gains)
+    else:
+        average_yearly_gain = 0.0
+
+    return average_yearly_gain
+
+
+def compile_backtest_results_sequential(results, data_frames):
     """
     Combine multiple backtest results (dicts) into one dictionary.
-    """
-    compiled_results = results[0]
-    for i in range(1, len(results)):
-        for key in compiled_results:
-            if isinstance(compiled_results[key], list):
-                compiled_results[key].extend(results[i][key])
-            elif isinstance(compiled_results[key], pd.DataFrame):
-                compiled_results[key] = pd.concat(
-                    [compiled_results[key], results[i][key]],
-                    ignore_index=True
-                )
-            else:
-                compiled_results[key] += results[i][key]
-    
-    # Calculate total time passed
-    total_time_passed = sum([df['time_passed'] for df in data_frames], pd.Timedelta(0))
-    compiled_results['total_time_passed'] = total_time_passed
 
-    # Calculate average return per year
-    total_years = total_time_passed.days / 365.25
-    compiled_results['average_return_per_year'] = compiled_results['total_percentage_gain'] / total_years
+    This version preserves chronological order by shifting dates and scaling portfolio values
+    to ensure continuity across multiple tickers or timeframes.
+
+    Parameters:
+    - results: List of backtest result dictionaries.
+    - data_frames: List of DataFrames used in the backtests.
+
+    Returns:
+    - dict: Compiled results with adjusted portfolio values and chronological order.
+    """
+    import pandas as pd
+    from datetime import timedelta
+    first_backtest = copy.deepcopy(results[0])
+    compiled_results = {}
+        
+    compiled_portfolio_values = first_backtest['portfolio_values_over_time']
+    compiled_trades_history = first_backtest['trades_history']
+
+    # Track the last value and date of the previous backtest
+    last_value = compiled_portfolio_values[-1]['value']
+    last_date = pd.to_datetime(compiled_portfolio_values[-1]['date_time'])
+
+    last_stock_value = compiled_portfolio_values[-1]['stock_value']
+
+    for i in range(1, len(results)):
+        
+        current_results = copy.deepcopy(results[i])
+        current_portfolio_values = copy.deepcopy(current_results['portfolio_values_over_time'])
+
+        # Shift the dates for the current portfolio to follow the previous
+        first_date = pd.to_datetime(current_portfolio_values[0]['date_time'])
+        date_offset = last_date + timedelta(days=1) - first_date
+
+        # Calculate the scaling factor for the portfolio values
+        first_value = current_portfolio_values[0]['value']
+        scaling_factor = last_value / first_value if first_value != 0 else 1
+
+        # Calculate the scaling factor for the stock values
+        first_stock_value = current_portfolio_values[0]['stock_value']
+        stock_scaling_factor = last_stock_value / first_stock_value if first_stock_value != 0 else 1
+
+        # Adjust the portfolio values and dates
+        adjusted_portfolio_values = []
+        for entry in current_portfolio_values:
+            adjusted_value = entry['value'] * scaling_factor
+            adjusted_stock_value = entry['stock_value'] * stock_scaling_factor
+            adjusted_date = pd.to_datetime(entry['date_time']) + date_offset
+            adjusted_portfolio_values.append({
+                'date_time': adjusted_date,
+                'value': adjusted_value,
+                'stock_value': adjusted_stock_value
+            })
+
+        # Append the adjusted portfolio values to the compiled list
+        compiled_portfolio_values.extend(adjusted_portfolio_values)
+
+        # Adjust and append trades history
+        for trade in current_results['trades_history']:
+            adjusted_trade = trade.copy()
+            adjusted_trade['purchase_date'] += date_offset
+            adjusted_trade['sale_date'] += date_offset
+            compiled_trades_history.append(adjusted_trade)
+
+        # Update last_value and last_date for the next iteration
+        last_value = adjusted_portfolio_values[-1]['value']
+        last_date = adjusted_portfolio_values[-1]['date_time']
+        last_stock_value = adjusted_portfolio_values[-1]['stock_value']
+
+    # Update compiled results with the new sequential portfolio values
+    compiled_results['portfolio_values_over_time'] = compiled_portfolio_values
+    compiled_results['trades_history'] = compiled_trades_history
+
+    # Calculate total time passed
+    total_time_passed = compiled_portfolio_values[-1]['date_time'] - compiled_portfolio_values[0]['date_time']
+    compiled_results['total_time_passed'] = total_time_passed
+    
+    total_years = total_time_passed / timedelta(days=365.25)  # Average number of days in a year
+    compiled_results['total_years'] = total_years
+    
+    # use the portfolio_values_over_time to calcualte average yearly gain
+    starting_value = compiled_portfolio_values[0]['value']
+    ending_value = compiled_portfolio_values[-1]['value']
+
+    compiled_results['total_percentage_gain'] = (ending_value / starting_value) - 1
+    
+    
+    compiled_results['average_return_per_year'] = calculate_average_yearly_gain(compiled_portfolio_values)
+    
+    # get the total amount of money made variable
+    total_money_made = 0
+    for r in results:
+        total_money_made = total_money_made + r['total_amount_of_money_made']
+    compiled_results['total_amount_of_money_made'] = total_money_made
+
+    # get the total number of trades
+    compiled_results['total_trades'] = len(compiled_trades_history)
+    
+    # calculate the average time holding any given position
+    time_held_list = [trade['time_held'] for trade in compiled_trades_history]
+    if time_held_list:
+        average_time_holding_position = sum(time_held_list, timedelta()) / len(time_held_list)
+        longest_time_position_held = max(time_held_list)
+    else:
+        average_time_holding_position = timedelta(0)
+        longest_time_position_held = timedelta(0)
+    compiled_results['average_time_holding_position'] = average_time_holding_position
 
     # Calculate average number of trades per year
-    compiled_results['average_trades_per_year'] = compiled_results['total_trades'] / total_years
-    
+    compiled_results['average_trades_per_year'] = len(compiled_trades_history) / total_years
+
     return compiled_results
 
 
-def optimize(strategies, data_frames, loss_function, optimization_method='random', max_evals=20, population_size=20):
+def optimize(strategies, data_frames, loss_function, optimization_method='random', max_evals=10, population_size=10):
     """
     Optimize the given strategies using the given data, loss function, and a chosen method.
 
@@ -114,10 +238,10 @@ def optimize(strategies, data_frames, loss_function, optimization_method='random
                 trading_signals = strategy(df['ohlc'], params)
                 backtest_results, _ = backtester.run_backtest(trading_signals)
                 results.append(backtest_results)
-            combined_results = compile_backtest_results(results, data_frames)
+            combined_results = compile_backtest_results_sequential(results, data_frames)
             return loss_function(combined_results)
         else:
-            trading_signals = strategy(data_frames[0], params)
+            trading_signals = strategy(data_frames[0]['ohlc'], params)
             backtest_results, _ = backtester.run_backtest(trading_signals)
             return loss_function(backtest_results)
 
@@ -211,6 +335,13 @@ def optimize(strategies, data_frames, loss_function, optimization_method='random
                 toolbox.register(f"attr_{param_name}", 
                                 random.uniform, min_val, max_val)
             
+            def safe_cxTwoPoint(ind1, ind2):
+                if len(ind1) > 1 and len(ind2) > 1:
+                    return tools.cxTwoPoint(ind1, ind2)
+                else:
+                    # Return unchanged individuals if crossover is invalid
+                    return ind1, ind2
+            
             # Structure initializers
             param_names = list(bounds.keys())
             toolbox.register("individual", tools.initCycle, creator.Individual,
@@ -222,7 +353,7 @@ def optimize(strategies, data_frames, loss_function, optimization_method='random
                 return (evaluate_strategy(strategy, param_dict),)
                 
             toolbox.register("evaluate", evaluate)
-            toolbox.register("mate", tools.cxTwoPoint)
+            toolbox.register("mate", safe_cxTwoPoint)
             toolbox.register("mutate", tools.mutGaussian, mu=0, sigma=1, indpb=0.2)
             toolbox.register("select", tools.selTournament, tournsize=3)
             
