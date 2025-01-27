@@ -28,7 +28,7 @@ class PDFReport(FPDF):
 
 tickers = ['SPY']
 
-training_data = {"start": '1980-01-01', "end": '2008-01-01'}
+training_data = {"start": '2000-01-01', "end": '2008-01-01'}
 testing_data = {"start": '2008-01-01', "end": '2009-01-01'}
 loss_functions_list = [
     loss_functions.simple_loss_function,
@@ -38,7 +38,7 @@ loss_functions_list = [
     loss_functions.gt_function
 ]
 optimization_techniques = ["random", "hyperopt", "genetic"]
-max_evals = 100
+max_evals = 50
 pop_size = 10
 
 data_frames = [fetch_historical_data(ticker, '1d', training_data['start'], training_data['end']) for ticker in tickers]
@@ -151,7 +151,10 @@ def run_loss_function(opt_tech, loss_function,pdf):
 
 for opt_tech in optimization_techniques:
     for loss_function in loss_functions_list:
-        run_loss_function(opt_tech,loss_function,pdf)
+        try:
+            run_loss_function(opt_tech,loss_function,pdf)
+        except:
+            pass
 
 
 # Save the PDF
