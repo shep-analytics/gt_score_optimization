@@ -18,7 +18,7 @@ This repository contains the codebase for the dissertation "Overcoming Overfitti
 
 ## Overview
 
-The project aims to develop and test different trading strategies while addressing the issue of overfitting. It includes various modules for data collection, strategy implementation, backtesting, live simulation, and optimization.
+The project aims to develop and test different trading strategies while addressing the issue of overfitting. It includes various modules for data collection, strategy implementation, backtesting, live simulation, and optimization. It includes the novel "GT-Score."
 
 ## Installation
 
